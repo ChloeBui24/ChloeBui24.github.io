@@ -1,0 +1,119 @@
+**Abstract:**
+
+This is a technical blog post of **both** an HTML file *and* [.qmd file](src/wine_of_pnw.qmd) hosted on GitHub pages.
+
+# Setup
+
+1.  Change the author of this RMD file to be yourself and delete this line.
+2.  Modify if necessary the below code so that you can successfully load `wine.rds` then delete this line.
+3.  In the space provided after the R chunk, explain what thecode is doing (line by line) then delete this line.
+4.  Get your [GitHub Pages](https://docs.github.com/en/pages/quickstart) ready.
+
+**Step Up Code:**
+```r
+library(tidyverse) # change r to {r} to run this block, then remove this comment
+
+wine <- readRDS(gzcon(url("https://github.com/cd-public/DSLM-505/raw/master/dat/wine.rds"))) %>%
+  filter(province=="Oregon" | province=="California" | province=="New York") %>% 
+  mutate(cherry=as.integer(str_detect(description,"[Cc]herry"))) %>% 
+  mutate(lprice=log(price)) %>% 
+  select(lprice, points, cherry, province)
+```
+```{r}
+library(tidyverse) 
+
+wine <- readRDS(gzcon(url("https://github.com/cd-public/DSLM-505/raw/master/dat/wine.rds"))) %>%
+  filter(province=="Oregon" | province=="California" | province=="New York") %>% 
+  mutate(cherry=as.integer(str_detect(description,"[Cc]herry"))) %>% 
+  mutate(lprice=log(price)) %>% 
+  select(lprice, points, cherry, province)
+```
+
+**Explanataion:**
+
+> <span style="color:red;font-weight:bold">TODO</span>: 
+*1.loads the tidyverse package 2.reads a compressed RDS file directly from a URL 3.uses filter() to keep only the rows where the province column matches 'Oregon', 'California', or 'New York'. 4. uses mutate() to add a new column named cherry. It uses str_detect from stringr to search the description column for the word "cherry" (case-insensitive, as indicated by "[Cc]"). The str_detect() function returns TRUE if "cherry" is found and FALSE otherwise. as.integer() converts these logical values to 1 (for TRUE) and 0 (for FALSE). 5. uses mutate() to add a new column lprice, which is the natural logarithm of the price column. 6.select() is used to keep only the specified columns (lprice, points, cherry, province) in the resulting data frame.*
+
+# Multiple Regression
+
+## Linear Models
+
+First run a linear regression model with log of price as the dependent variable and 'points' and 'cherry' as features (variables).
+
+```{r}
+m1 <- lm(lprice ~ points + cherry, data = wine)
+get_regression_table(m1)
+```
+
+**Explanataion:**
+
+> <span style="color:red;font-weight:bold">TODO</span>: *write your line-by-line explanation of the code here*
+
+> <span style="color:red;font-weight:bold">TODO</span>: *report and explain the RMSE*
+
+```{r}
+rmse <- sqrt(mean(residuals(m1)^2))
+print(rmse)
+```
+
+
+## Interaction Models
+
+Add an interaction between 'points' and 'cherry'. 
+
+```{r}
+m2 <- lm(lprice ~ points * cherry, data = wine)
+get_regression_table(m2)
+```
+
+> <span style="color:red;font-weight:bold">TODO</span>: *write your line-by-line explanation of the code here*
+
+> <span style="color:red;font-weight:bold">TODO</span>: *report and explain the RMSE*
+
+```{r}
+rmse2 <- sqrt(mean(residuals(m2)^2))
+print(rmse2)
+```
+
+
+### The Interaction Variable
+
+> <span style="color:red;font-weight:bold">TODO</span>: *interpret the coefficient on the interaction variable.* <br>[Explain as you would to a non-technical manager.](https://youtube.com/clip/UgkxY7ohjoimIef6zpPLjgQHqJcJHeZptuVm?feature=shared)
+
+## Applications
+
+Determine which province (Oregon, California, or New York), does the 'cherry' feature in the data affect price most?
+
+```{r}
+# Fit the model with interactions between 'cherry' and 'province'
+m3 <- lm(lprice ~ points + cherry * factor(province), data = wine)
+
+get_regression_table(m3)
+```
+
+> <span style="color:red;font-weight:bold">TODO</span>: *write your line-by-line explanation of the code here, and explain your answer.*
+
+# Scenarios
+
+## On Accuracy
+
+Imagine a model to distinguish New York wines from those in California and Oregon. After a few days of work, you take some measurements and note: "I've achieved 91% accuracy on my model!" 
+
+Should you be impressed? Why or why not?
+
+```{r}
+# TODO: Use simple descriptive statistics from the data to justify your answer.
+```
+
+> <span style="color:red;font-weight:bold">TODO</span>: *describe your reasoning here*
+
+## On Ethics
+
+Why is understanding this vignette important to use machine learning in an ethical manner?
+
+> <span style="color:red;font-weight:bold">TODO</span>: *describe your reasoning here*
+
+## Ignorance is no excuse
+Imagine you are working on a model to predict the likelihood that an individual loses their job as the result of the changing federal policy under new presidential administrations. You have a very large dataset with many hundreds of features, but you are worried that including indicators like age, income or gender might pose some ethical problems. When you discuss these concerns with your boss, she tells you to simply drop those features from the model. Does this solve the ethical issue? Why or why not?
+
+> <span style="color:red;font-weight:bold">TODO</span>: *describe your reasoning here*
