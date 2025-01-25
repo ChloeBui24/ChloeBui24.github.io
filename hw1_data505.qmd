@@ -1,0 +1,143 @@
+---
+title: Wine of PNW
+Author: Chloe Bui
+Date: 01/24/2025
+Format: HTML
+---
+
+## Prepare the data
+
+```{r}
+library(tidyverse) 
+library(moderndive)
+library(caret)
+library(dslabs)
+
+wine <- readRDS(gzcon(url("https://github.com/cd-public/DSLM-505/raw/master/dat/wine.rds"))) %>%
+  filter(province=="Oregon" | province=="California" | province=="New York") %>% 
+  mutate(cherry=as.integer(str_detect(description,"[Cc]herry"))) %>% 
+  mutate(lprice=log(price)) %>% 
+  select(lprice, points, cherry, province)
+```
+
+**Explanation:**
+
+> *1.loads the tidyverse package*
+>
+> *2.reads a compressed RDS file directly from a URL*
+>
+> *3.uses filter() to keep only the rows where the province column matches 'Oregon', 'California', or 'New York'.*
+>
+> *4. uses mutate() to add a new column named cherry. It uses str_detect to search the description column for the word "cherry" (case-insensitive, as indicated by "\[Cc\]"). The str_detect() function returns TRUE if "cherry" is found and FALSE otherwise. as.integer() converts these logical values to 1 (for TRUE) and 0 (for FALSE).*
+>
+> *5. uses mutate() to add a new column lprice, which is the logarithm of the price column.*
+>
+> *6. select() is used to keep only the specified columns (lprice, points, cherry, province).*
+
+## Multiple Regression
+
+### **Linear Model**
+
+First run a linear regression model with log of price as the dependent variable and 'points' and 'cherry' as features (variables).
+
+```{r}
+m1 <- lm(lprice ~ points + cherry, data = wine)
+get_regression_table(m1)
+```
+
+**Explanation:**
+
+> *1. fit a linear regression model m1. It models the logarithm of wine prices as a function of the wine's quality points and whether the description mentions 'cherry' .*
+>
+> *2.display a table which includes coefficients, standard errors, t-statistics, and p-values for each predictor, from the fitted model m1.*
+
+```{r}
+get_regression_summaries(m1)
+```
+
+**Explanation:**
+
+*The RMSE of 0.46876 indicates the typical prediction error in the logarithmic scale of wine prices is about 0.469.*
+
+### **Interaction Models**
+
+Add an interaction between 'points' and 'cherry'
+
+```{r}
+m2 <- lm(lprice ~ points * cherry, data = wine)
+get_regression_table(m2)
+```
+
+**Explanation:**
+
+> *1. fits a linear regression model m2 to predict the logarithm of wine prices based on the interaction and individual effects* *of the wine's quality points and whether the description mentions 'cherry' .*
+>
+> *2.display a table which includes coefficients, standard errors, t-statistics, and p-values for each predictor, from the fitted model m2.*
+
+```{r}
+get_regression_summaries(m2)
+```
+
+**Explanation:**
+
+*The RMSE of 0.46852 of model 2 indicates the typical prediction error in the logarithmic scale of wine prices is about 0.469, which is similar to model m1*
+
+**The Interaction Variable:**
+
+*The coefficient for the interaction variable "points:cherry" is 0.013 with a standard error of 0.002, and it is statistically significant (p-value = 0). This indicates that for each additional point increase, the effect of the 'cherry' mentioned on the logarithm of wine prices increases by 0.013. it also suggests a positive interaction between wine points and the mention of 'cherry' in influencing wine prices.*
+
+### Applications
+
+Determine which province (Oregon, California, or New York), does the 'cherry' feature in the data affect price most?
+
+```{r}
+wine$province <- factor(wine$province, levels = c("California", "Oregon", "New York"))
+
+m3 <- lm(lprice ~ points + cherry * province, data = wine)
+
+get_regression_table(m3)
+
+```
+
+**Explanation:**
+
+*Interection Effects:*
+
+*-Cherry:ProvinceOregon (0.111, p-value \< 0.000): The presence of 'cherry' in the wine description increases the log price by an additional 0.111 in Oregon compared to California. This effect is statistically significant, indicating that the impact of 'cherry' on price is more pronounced in Oregon than in California.*
+
+*-Cherry:ProvinceNew York (0.038, p-value = 0.098): In New York, the additional effect of 'cherry' on the log price is 0.038 compared to California, but this effect is not statistically significant (p-value = 0.098), which meabns the mention of 'cherry' does not have a reliably different impact on prices in New York compared to California.*
+
+*Therefore, the "cherry" feature in the data affects the price most in Oregon.*
+
+## Scenarios
+
+### On Accuracy
+
+Imagine a model to distinguish New York wines from those in California and Oregon. After a few days of work, you take some measurements and note: "I've achieved 91% accuracy on my model!"
+
+Should you be impressed? Why or why not?
+
+```{r}
+# Calculate proportion of each province
+province_pct <- wine %>% 
+  group_by(province) %>% 
+  summarise(Count = n(), .groups = 'drop') %>% 
+  mutate(Percentage = round (Count*100 / sum(Count),2))
+print(province_pct)
+```
+
+**Explanation:**
+
+*As California Wines significantly outnumber those from Oregon and New York, 91% accuracy of a model to identify whether a wine was from New York or not would not indicate an effective model. Because this model can achieve high accuracy simply by mostly predicting the majority class (California). So we need to consider Precision or Recall or Confusion Matrix.*
+
+### On Ethics
+
+Why is understanding this vignette important to use machine learning in an ethical manner?
+
+*Vignettes provide detailed insights into the functionalities and limitations of machine learning algorithms. By thoroughly understanding these aspects, practitioners can ensure that they are not only applying these tools within their technical constraints but also considering the ethical implications. Also, Vignettes equip users with the knowledge to identify and correct issues within machine learning models, such as imbalances or skewed outputs that could lead to unfair outcomes. Then they can adjust the model to align with ethical standards and societal values.*
+
+### Ignorance is no excuse
+
+Imagine you are working on a model to predict the likelihood that an individual loses their job as the result of the changing federal policy under new presidential administrations. You have a very large dataset with many hundreds of features, but you are worried that including indicators like age, income or gender might pose some ethical problems. When you discuss these concerns with your boss, she tells you to simply drop those features from the model. Does this solve the ethical issue? Why or why not?
+
+*Ethical modeling isn't just about removing sensitive features but understanding how their inclusion or exclusion impacts the fairness and effectiveness of the model. It requires an approach that considers both the potential for discrimination and the importance of these features in making accurate predictions. For example, in some cases, explicitly including these variables with appropriate control can help in understanding and mitigating biases more effectively than simply omitting them.*
