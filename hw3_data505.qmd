@@ -1,0 +1,181 @@
+---
+title: K Nearest Neighbor
+author: "Chloe Bui"
+date: "02/10/2025"
+
+format: 
+  html:
+    theme: superhero  
+    mainfont: monospace
+    highlight-style: github
+    title-block-banner: true
+    embed-resources: true
+
+---
+
+**Abstract:**
+
+This is a technical blog post of **both** an HTML file *and* [.qmd file](https://raw.githubusercontent.com/cd-public/D505/refs/heads/master/hws/src/knn.qmd) hosted on GitHub pages.
+
+# 1. Setup
+
+```{r}
+library(tidyverse)
+library(caret)
+library(fastDummies)
+wine <- readRDS(gzcon(url("https://github.com/cd-public/D505/raw/master/dat/pinot.rds")))
+```
+
+## 2. $K$NN Concepts
+
+*Explain how the choice of K affects the quality of your prediction when using a $K$ Nearest Neighbors algorithm.*
+
+When K is small, prediction are heavily influenced by the nearest neighbors.The model captures noise in the training data (which means a few misclassified points can distort predictions), leading to high variance (the decision boundary fluctuates to accommodate every training point) and overfitting (The model perfectly classifies training data but is unlikely to generalize well to new data).
+
+When K is large, decision boundary is much smoother and less jagged (lowering variance) but may cause underfitting( The decision boundary overgeneralizes, potentially misclassifying points).
+
+## 3. Feature Engineering
+
+1. Create a version of the year column that is a *factor* (instead of numeric).
+2. Create dummy variables that indicate the presence of "cherry", "chocolate" and "earth" in the description.
+  - Take care to handle upper and lower case characters.
+3. Create 3 new features that represent the interaction between *time* and the cherry, chocolate and earth inidicators.
+4. Remove the description column from the data.
+
+```{r}
+wino <- wine %>%
+  # Create year column in factor
+  mutate(year_f = as.factor(year)) %>% 
+  # change to lower case before create dummy variables
+  rename_all(funs(tolower(.))) %>% 
+  # create dummy variables
+  mutate(note_cherry = as.numeric(str_detect(description,"cherry"))) %>% 
+  mutate(note_chocolate = as.numeric(str_detect(description,"chocolate"))) %>%
+  mutate(note_earth = as.numeric(str_detect(description,"earth"))) %>%
+  # create 3 new features
+  mutate(
+    interaction_cherry = year * note_cherry,
+    interaction_chocolate = year * note_chocolate,
+    interaction_earth = year * note_earth) %>% 
+  # remove description column
+  select(-description)
+
+```
+## 4. Preprocessing
+
+1. Preprocess the dataframe from the previous code block using BoxCox, centering and scaling of the numeric features
+
+```{r}
+wino <- wino %>% 
+  preProcess(method = c("BoxCox","center","scale")) %>%
+  predict(wino)
+```
+
+2. Create dummy variables for the `year` factor column
+
+```{r}
+wino <- wino %>% 
+  dummy_cols(select_columns = "year_f",
+             remove_most_frequent_dummy = T, 
+    remove_selected_columns = T)
+```
+
+
+## 5. Running $K$NN
+
+1. Split the dataframe into an 80/20 training and test set
+
+```{r}
+set.seed(505)
+wine_index <- createDataPartition(wino$province, p = 0.8, list = FALSE)
+train <- wino[ wine_index, ]
+test <- wino[-wine_index, ]
+```
+
+2. Use Caret to run a $K$NN model that uses our engineered features to predict province
+  - use 5-fold cross validated subsampling 
+  - allow Caret to try 15 different values for $K$
+  
+```{r}
+fit <- train(province ~ .,
+             data = train, 
+             method = "knn",
+             tuneLength = 15,
+             trControl = trainControl(method = "repeatedcv", number = 5, repeats = 3))
+
+fit
+```
+
+  
+3. Display the confusion matrix on the test data
+
+```{r}
+confusionMatrix(predict(fit, test),factor(test$province))
+```
+
+## 6. Kappa
+
+How do we determine whether a Kappa value represents a good, bad or some other outcome?
+
+To determine whether a Kappa value represents a good, bad, or other outcome, we can use the standard: 
+
+- `< 0.2` (not so good)
+- `0.21 - 0.4` (ok)
+- `0.41 - 0.6` (pretty good)
+- `0.6 - 0.8` (great)
+- `> 0.8` (almost perfect)
+
+And we should consider the context (specific industry such as medical diagnostic expects high K (>0.6-0.7)), the number of categories (For example, more categories can lead to lower K) or any dominant or rare class (For example, if one category is dominant, K may appear artificially low, while if one class is rare, K can be misleadingly low..
+
+## 7. Improvement
+
+How can we interpret the confusion matrix, and how can we improve in our predictions?
+
+*Interpretation*
+
+1.Correct Predictions 
+
+- Burgundy: 97
+- California: 686
+- Casablanca_Valley: 0
+- Marlborough: 0
+- New_York: 1
+- Oregon: 258
+
+2.Misclassification
+
+- Many Oregon samples are predicted as California (90) or Burgundy (67)
+- Many California samples are predicted as Oregon (255) or Burgundy (73)
+
+3.Accuracy=0.6234: The model correctly predicts about 62% of the test set.
+
+Kappa=0.3724: Indicates moderate agreement between predicted and actual classes.
+
+4.Concerns:
+
+- The model performs well on majority classes (California and Oregon) but struggles with minority classes.
+- High confusion between Oregon and California indicates that features may not adequately separate these regions.
+
+*Improvement*
+
+we can use Kappa method rather than accuracy, due to class imbalance
+
+```{r}
+fit2 <- train(province ~ .,
+             data = train, 
+             method = "knn",
+             tuneLength = 15,
+             metric = "Kappa", # New method
+             trControl = trainControl(method = "repeatedcv", number = 5, repeats = 3))
+
+fit2
+```
+Test confusion matrix with fit2 model:
+
+```{r}
+confusionMatrix(predict(fit2, test),factor(test$province))
+```
+
+*Conlusion*
+
+The new model with Kappa method does not improve the performance, we should considerremove some features or test with different types of resampling (For example: bootstrap).
