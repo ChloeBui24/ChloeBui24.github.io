@@ -1,0 +1,156 @@
+---
+title: "Conditional Probability"
+author: "Chloe Bui"
+date: "02/17/2025"
+
+format: 
+  html:  
+    theme: superhero  
+    mainfont: monospace
+    highlight-style: github
+    title-block-banner: true
+    embed-resources: true
+---
+
+**Abstract:**
+
+This is a technical blog post of **both** an HTML file *and* [.qmd file](https://raw.githubusercontent.com/cd-public/D505/refs/heads/master/hws/src/cond.qmd) hosted on GitHub pages.
+
+# 1. Setup
+
+**Step Up Code:**
+
+```{r}
+sh <- suppressPackageStartupMessages
+sh(library(tidyverse))
+sh(library(caret))
+wine <- readRDS(gzcon(url("https://github.com/cd-public/D505/raw/master/dat/pinot.rds")))
+```
+
+
+# 2. Conditional Probability
+
+Calculate the probability that a Pinot comes from Burgundy given it has the word 'fruit' in the description.
+
+$$
+P({\rm Burgundy}~|~{\rm Fruit})
+$$
+
+```{r}
+wino <- wine %>% 
+  mutate(fruit = str_detect(description,"fruit")) %>% 
+  mutate(chocolate = str_detect(description,"chocolate")) %>%
+  mutate(earth = str_detect(description,"earth")) %>%
+  select(-description)
+
+glimpse(wino)
+```
+```{r}
+Burgundy_and_fruit <- nrow(filter(wino, province=="Burgundy" & fruit))/nrow(wino)
+fruit <- nrow(filter(wino, fruit))/nrow(wino)
+Burgundy_and_fruit/fruit
+```
+
+
+# 3. Naive Bayes Algorithm
+
+We train a naive bayes algorithm to classify a wine's province using:
+1. An 80-20 train-test split.
+
+```{r}
+set.seed(505)
+wine_index <- createDataPartition(wino$province, p = 0.80, list = FALSE)
+train <- wino[ wine_index, ]
+test <- wino[-wine_index, ]
+```
+
+2. Three features engineered from the description
+3. 5-fold cross validation.
+
+We report Kappa after using the model to predict provinces in the holdout sample.
+
+```{r}
+fit <- train(province ~ .,
+             data = train, 
+             method = "naive_bayes",
+             metric = "Kappa",
+             trControl = trainControl(method = "cv",number = 5))
+fit
+```
+*Interpretation*
+
+The model performed slightly better when using kernel density estimation (usekernel = TRUE), meaning it did not assume normal distributions for the features.
+
+The accuracy (56%) is moderate but not extremely high, indicating the features may not fully distinguish the provinces.
+
+Kappa (0.3288) suggests moderate agreement beyond chance, but there is still room for improvement.
+
+# 4. Frequency Differences
+
+We find the three words that most distinguish New York Pinots from all other Pinots.
+
+```{r}
+library(tidytext)
+df <- wine
+df <- df %>%
+  unnest_tokens(word, description) %>% 
+  anti_join(stop_words) %>% 
+  filter(word != "wine") %>%
+  filter(word != "pinot") %>% 
+  count(id, word) %>% 
+  group_by(id) %>% 
+  mutate(freq = n/sum(n)) %>% 
+  mutate(exists = (n>0)) %>% 
+  ungroup() %>% 
+  group_by(word) %>% 
+  mutate(total = sum(n)) %>% 
+  left_join(select(wine, id, province), by = "id")
+
+head(df)
+```
+```{r}
+# Create a binary province category
+df <- df %>%
+  mutate(region = ifelse(province == "New_York", "New_York", "Other_Provinces"))
+
+# Count word occurrences for each region
+word_counts <- df %>%
+  count(region, word) %>%
+  group_by(region) %>%
+  mutate(total = sum(n)) %>%
+  ungroup()
+
+# Compute log-odds ratio for distinguishing words
+word_odds <- word_counts %>%
+  spread(region, n, fill = 0) %>%
+  mutate(log_odds = log((New_York + 1) / (sum(New_York) + 1)) - 
+                   log((Other_Provinces + 1) / (sum(Other_Provinces) + 1))) %>%
+  arrange(desc(log_odds))
+
+# Select the top 3 words that most distinguish New York
+top_words <- word_odds %>% 
+  slice_max(log_odds, n = 3)
+
+# Display results
+print(top_words)
+```
+
+
+# 5. Extension
+
+Calculate the variance of the logged word-frequency distributions for each province.
+
+```{r}
+# Compute the logged word frequency
+df_logged <- df %>%
+  mutate(log_freq = log(freq + 1))  # Adding 1 to avoid log(0) issues
+
+# Calculate variance of log frequencies for each province
+variance_by_province <- df_logged %>%
+  group_by(province) %>%
+  summarise(variance_log_freq = var(log_freq, na.rm = TRUE)) 
+
+
+print(variance_by_province)
+```
+
