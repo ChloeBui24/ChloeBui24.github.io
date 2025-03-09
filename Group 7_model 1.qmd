@@ -1,0 +1,95 @@
+---
+title: "Model 1"
+author: "Team 7"
+date: "03/10/2025"
+
+format: 
+  html:  # You will quite likely want to change all but the last one, to taste
+    theme: superhero  
+    mainfont: monospace
+    highlight-style: github
+    title-block-banner: true
+    embed-resources: true
+---
+
+# 1. Setup
+
+**Step Up Code:**
+
+```{r}
+sh <- suppressPackageStartupMessages
+sh(library(tidyverse))
+sh(library(caret))
+sh(library(fastDummies))
+sh(library(moderndive))
+sh(library(class))
+
+wine <- readRDS(gzcon(url("https://github.com/cd-public/D505/raw/master/dat/model.rds")))
+```
+
+# 2. Featuring
+
+```{r}
+# Featuring
+wine2 <- wine %>%
+  mutate(points_per_price = points/price) %>% 
+  mutate(log_price = log(price + 1)) %>% 
+  mutate(wine_age = 2025 - year) %>% 
+  select(-description)
+
+# select Only Numeric columns
+wine_numeric <- wine2 %>% select(-province)  # Exclude categorical variable
+
+# Caret preprocessing
+wine3 =  wine_numeric %>%
+  preProcess(method = c("center","scale")) %>%
+  predict(wine_numeric)
+
+# Step 5: Merge Transformed Numeric Data with Province Column
+wine4 <- bind_cols(wine3, wine2 %>% select(province))
+
+head(wine4)
+```
+
+
+
+```{r}
+write_rds(wine4, file="group_7_knn.rds")
+wine <- readRDS("group_7_knn.rds")
+set.seed(505)  
+split <- createDataPartition(wine$province, p = 0.8, list = FALSE)
+train <- wine[split, ]
+test <- wine[-split, ]
+
+fit <- train(province ~ .,
+             data = train, 
+             method = "knn",
+             tuneLength = 15,
+             metric = "Kappa",
+             trControl = trainControl(method = "cv", number = 5))
+
+confusionMatrix(predict(fit, test),factor(test$province))$overall['Kappa']
+```
+```{r}
+confusionMatrix(predict(fit, test),factor(test$province))
+```
+
+Note: 
+
+The KNN model achieved 59.95% accuracy and a Kappa score of 0.3365, showing some concerns with class imbalance. California (82.3% recall) and Oregon (47.2% recall) perform well, but smaller provinces like Marlborough (2.2%) and New York (11.5%) are rarely predicted correctly. The model tends to favor dominant classes, leading to high specificity (99%+) but poor sensitivity for rare provinces.
+
+
+# 3. Test with other methods
+
+## Test with Random Forest Method
+
+```{r}
+fit_rf <- train(province ~ ., data = train, method = "rf",
+                tuneLength = 10, metric = "Kappa",
+                trControl = trainControl(method = "cv", number = 5))
+
+confusionMatrix(predict(fit_rf, test),factor(test$province))$overall['Kappa']
+confusionMatrix(predict(fit_rf, test),factor(test$province))
+```
+
+
