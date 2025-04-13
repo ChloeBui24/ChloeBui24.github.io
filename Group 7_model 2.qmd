@@ -1,0 +1,181 @@
+---
+title: "Model 2"
+author: "Team 7"
+date: "04/14/2025"
+
+format: 
+  html:  # You will quite likely want to change all but the last one, to taste
+    theme: superhero  
+    mainfont: monospace
+    highlight-style: github
+    title-block-banner: true
+    embed-resources: true
+---
+
+# 1. Setup
+
+**Step Up Code:**
+
+```{r}
+sh <- suppressPackageStartupMessages
+sh(library(tidyverse))
+sh(library(caret))
+sh(library(fastDummies))
+sh(library(moderndive))
+sh(library(class))
+
+bank <- readRDS(gzcon(url("https://cd-public.github.io/D505/dat/BankChurners.rds")))
+```
+
+# 2. Featuring
+
+```{r}
+#PCA the bank
+bank2 <- bank %>%
+ mutate(Churn = Churn=="yes") %>%
+ dummy_cols(remove_selected_columns = T)
+
+pr_bank = prcomp(x = select(bank2, -Churn), scale=T, center = T)
+summary(pr_bank)
+```
+
+```{r}
+#Show variance plot
+screeplot(pr_bank, type="lines")
+```
+
+```{r}
+# Filter variables that have a strong loading (≥ |0.35|) on any of the 1st five PCs
+rownames_to_column(as.data.frame(pr_bank$rotation)) %>% select(1:6) %>%
+ filter(abs(PC1) >= 0.35 | abs(PC2) >= 0.35 | abs(PC3) >= 0.35 | abs(PC4) >= 0.35 | abs(PC5) >= 0.35)
+```
+
+Note:
+
+- PC1 captures credit availability (Credit_limit = 0.41, Avg_Open_To_Buy = 0.41)
+
+- PC2 Positively correlated with Blue card and male gender (Gender_M = 0.32, Card_Category_Blue = 0.35)
+
+- PC3 Dominated by transaction frequency and volume (Total_Trans_Ct = 0.3)
+
+- PC4 Captures age and customer tenure (Customer_Age = 0.44, Months_on_book = 0.44)
+
+- PC5 Strongly distinguishes between married vs. single status (Marital_Status_Married = 0.54)
+
+
+```{r}
+#Add labels for 5 PCs WHICH IS 5 FEATURES
+prc <- bind_cols(select(bank2, Churn), as.data.frame(pr_bank$x)) %>% select(1:6) %>%
+  rename("Buy/Credit" = PC1, "Blue/Man" = PC2, "Trans" = PC3, 
+         "Age"= PC4, "Married/Not" = PC5)
+
+#Check density
+prc %>%
+  pivot_longer(cols = -Churn, names_to = "component", values_to = "loading") %>%
+  ggplot(aes(loading, fill=Churn)) + geom_density(alpha = 0.5) + facet_grid(.~component)
+```
+
+```{r}
+# Test Model with Naive Bayer
+prc$Churn <- as.factor(prc$Churn)
+
+set.seed(505)
+
+fit <- train(Churn ~ .,
+             data = prc, 
+             method = "naive_bayes",
+             metric = "Kappa",
+             trControl = trainControl(method = "cv"))
+
+confusionMatrix(predict(fit, prc),factor(prc$Churn))$overall['Kappa']
+```
+Note:
+
+A Kappa of 0.34 indicates only moderate agreement between predicted and actual churn labels — better than chance, but far from ideal for reliable prediction.Some factors should be considered: Class Imbalance or not, or there may still be residual correlations among the top PCs, violating Naïve Bayes assumptions.
+
+```{r}
+#Check class distribution
+table(prc$Churn)
+```
+Note:
+
+This shows that about 16% of the customers churn, which is a highly imbalanced dataset. This imbalance is likely the biggest reason why Naïve Bayes model has a low Kappa (~0.34).Therefore, we will try other models more robust to imbalance
+
+
+```{r}
+# Test Model with Logistic Regression
+control = trainControl(method = "cv", number = 5)
+fit_glm <- train(Churn ~ ., data = prc, 
+                 method = "glm",
+                 family = "binomial", 
+                 metric = "Kappa",
+                 trControl = control)
+confusionMatrix(predict(fit_glm, prc),factor(prc$Churn))$overall['Kappa']
+
+```
+
+```{r}
+# Test Model with Random Forest
+fit_rf <- train(Churn ~ ., 
+                data = prc, 
+                method = "rf",
+                metric = "Kappa", 
+                trControl = control,
+                maxit = 5)
+confusionMatrix(predict(fit_rf, prc),factor(prc$Churn))$overall['Kappa']
+```
+
+```{r}
+set.seed(505)
+prc_index <- createDataPartition(prc$Churn, p = 0.80, list = FALSE)
+ train <- prc[ prc_index, ]
+ test <- prc[-prc_index, ]
+
+ fit_rf2 <- train(Churn ~ ., 
+                data = train, 
+                method = "rf",
+                metric = "Kappa", 
+                trControl = control,
+                maxit = 5)
+confusionMatrix(predict(fit_rf2, test),factor(test$Churn))$overall['Kappa'] 
+
+```
+Note:
+
+We will try another method to find better Kappa Value than PCA
+
+
+```{r}
+# Convert Churn to factor
+bank2$Churn <- factor(bank$Churn, levels = c("no", "yes"))
+
+# select 5 features
+bank_featured = bank2 %>% 
+  select(Total_Trans_Ct, Total_Trans_Amt, Total_Revolving_Bal,
+         Total_Ct_Chng_Q4_Q1, Total_Relationship_Count, Churn)
+
+# WriteRDS
+write_rds(bank_featured, file="model_2.rds")
+
+# split data
+set.seed(505)
+index <- createDataPartition(bank_featured$Churn, p = 0.8, list = FALSE)
+train <- bank_featured[index, ]
+test <- bank_featured[-index, ]
+
+# Train final model
+fit_final <- train(
+  Churn ~ .,
+  data = train,
+  method = "rf",
+  trControl = control,
+  metric = "Kappa")
+
+# Evaluate
+pred <- predict(fit_final, test)
+conf_matrix <- confusionMatrix(pred, test$Churn)
+kappa_value <- conf_matrix$overall["Kappa"]
+print(kappa_value)
+```
+
+Note: The Kappa value is improved significantly with 5 new features
